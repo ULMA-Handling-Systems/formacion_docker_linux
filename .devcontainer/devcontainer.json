@@ -1,0 +1,9 @@
+{
+  "name": "Formacion Docker + Linux",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "hostRequirements": { "cpus": 2 },
+  "postCreateCommand": "docker pull hello-world && docker pull nginx:alpine && docker pull ubuntu:24.04"
+}
