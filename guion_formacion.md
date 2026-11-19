@@ -4,7 +4,7 @@ Dos bloques de ejercicios para 4 alumnos sin experiencia en Linux, pensados para
 
 ## Plan de la sesión
 
-La sesión cabe en 110 minutos, con 10 de margen para imprevistos; el punto crítico es no pasar de 45 minutos en Linux.
+La sesión cabe en 110 minutos, con 10 de margen para imprevistos; el punto crítico es no pasar de 45 minutos en Linux. La Parte 3 (Docker Compose, ejercicios 13 y 14) añade unos 15 minutos: solo cabe si recortas la ampliación del ejercicio 11 o usas el margen.
 
 | Bloque | Duración | Ejercicios |
 | --- | --- | --- |
@@ -49,6 +49,34 @@ sudo ls /root                   # funciona
 Comprobación: entienden la diferencia entre un usuario normal y uno con `sudo`, y que `exit` cierra la sesión del usuario actual, no el terminal.
 
 ### Ejercicio 3: moverse por los directorios
+
+Antes de moverse conviene ver el mapa: `ls /` muestra estas carpetas de primer nivel. En el ejercicio se trabaja en `/home` y solo se mira `/etc`; el resto es del sistema.
+
+```text
+/                                  raíz: de aquí cuelga todo
+├── Programas y librerías
+│   ├── /usr           programas instalados (apt)
+│   ├── /bin y /sbin   comandos básicos; enlaces a /usr
+│   ├── /lib           librerías; enlace a /usr/lib
+│   └── /opt           software de terceros
+├── Personas y datos   <-- donde se trabaja en la práctica
+│   ├── /home          una carpeta por usuario (~ = tu carpeta dentro de /home)
+│   ├── /root          carpeta del administrador
+│   ├── /srv           datos de los servicios
+│   ├── /mnt           montajes manuales
+│   └── /media         discos y USB montados
+├── Configuración y arranque
+│   ├── /etc           configuración del sistema (texto)
+│   └── /boot          kernel y arranque
+├── Datos que cambian
+│   ├── /var           logs, cachés, bases de datos
+│   ├── /tmp           temporales, se pueden borrar
+│   └── /run           estado desde el arranque
+└── Virtual: lo genera el kernel
+    ├── /proc          procesos y estado del kernel
+    ├── /sys           hardware y drivers
+    └── /dev           dispositivos como ficheros
+```
 
 ```bash
 cd ~                                  # ir al home
@@ -143,6 +171,22 @@ Comprobación: el script se ejecuta y saben leer `-rwxr-xr-x`: tipo, permisos de
 ## Parte 2: Docker, carga desde fichero y supervisión
 
 Las imágenes no se descargan de Docker Hub: se cargan desde ficheros `.tar` que ya están en el repo, en la carpeta `imagenes/`. Es el mismo procedimiento que se usa en un entorno sin acceso a un registry.
+
+```text
+Tu codespace (Ubuntu 24.04)
+├── Cliente docker ...... el comando que escribes (run, ps, logs, load)
+│        │  API REST
+│        ▼
+├── Daemon (dockerd) .... guarda las imágenes y ejecuta los contenedores
+│   ├── Imágenes ........ plantillas de solo lectura (alpine:3.20, nginx:alpine)
+│   └── Contenedores .... instancias en ejecución creadas desde una imagen
+└── Fichero .tar (carpeta imagenes/) ──docker load──▶ Imágenes
+
+Fuera del codespace:
+Registry (Docker Hub) ──docker pull──▶ Imágenes   (no se usa en la práctica)
+```
+
+El cliente `docker` solo envía órdenes al daemon por su API; el daemon guarda las imágenes (cargadas desde un `.tar` o descargadas de un registry) y ejecuta los contenedores a partir de ellas.
 
 ### Ejercicio 7: comprobar el entorno
 
@@ -302,3 +346,68 @@ Problemas previsibles durante la sesión:
 - **Alguien no ve el puerto 8080.** Se abre desde la pestaña *Ports*; si está vacía, el contenedor `web` no está corriendo (`docker ps`).
 - **Alumno que se queda atascado en vi.** `Esc` y después `:q!` lo saca de cualquier situación; ponlo en la pizarra desde el principio.
 - **Se quedan sin cuota de Codespaces.** Cada alumno debe usar su cuenta personal; en cuentas de organización no hay cuota gratuita.
+
+## Parte 3: Docker Compose
+
+Compose describe en un fichero lo que hasta ahora se escribía a mano con `docker run`: varios contenedores con sus puertos, volúmenes y políticas de reinicio, que se levantan y se bajan juntos. Reutiliza las imágenes ya cargadas, así que no necesita red. Es opcional si el tiempo aprieta.
+
+| En `docker run` | En `compose.yaml` |
+| --- | --- |
+| `--name web` | el nombre del servicio (`web:`) |
+| la imagen, `nginx:alpine` | `image: nginx:alpine` |
+| `-p 8082:80` | `ports: ["8082:80"]` |
+| `-v ./html:/usr/share/nginx/html:ro` | `volumes:` |
+| `--restart unless-stopped` | `restart: unless-stopped` |
+| el comando al final | `command:` |
+
+### Ejercicio 13: tu primer compose.yaml
+
+```bash
+docker compose version               # el plugin viene con Docker; se invoca sin guion
+mkdir -p ~/practica/compose/html && cd ~/practica/compose
+vi html/index.html                   # una línea: <h1>Hola desde Compose</h1>
+vi compose.yaml                      # contenido de abajo
+```
+
+```yaml
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8082:80"
+    volumes:
+      - ./html:/usr/share/nginx/html:ro
+    restart: unless-stopped
+  reloj:
+    image: alpine:3.20
+    command: sh -c 'while true; do date; sleep 2; done'
+    restart: unless-stopped
+```
+
+```bash
+docker compose config                # valida el fichero y lo muestra expandido
+docker compose up -d                 # crea la red y arranca los dos servicios
+docker compose ps
+curl -s localhost:8082               # <h1>Hola desde Compose</h1>
+docker compose logs --tail 3 reloj
+```
+
+Sin reiniciar nada, vuelven a abrir `html/index.html` con `vi`, cambian el texto y repiten el `curl`: la página nueva aparece al instante porque el volumen monta la carpeta del codespace dentro del contenedor.
+
+Comprobación: `docker compose ps` muestra `web` y `reloj` en marcha y el `curl` devuelve el HTML editado. El error más habitual es indentar el YAML con tabuladores en vez de espacios; en vi se escriben 2 espacios.
+
+### Ejercicio 14: supervisar y bajar el conjunto
+
+```bash
+docker compose ps -a
+docker compose stop web              # para un solo servicio
+docker compose ps
+docker compose start web
+docker compose top                   # procesos de todos los servicios
+docker compose exec web ls /usr/share/nginx/html
+docker compose down                  # borra contenedores y red del proyecto
+docker ps -a                         # vacío
+ls                                   # compose.yaml y html/ siguen ahí
+```
+
+Comprobación: saben decir que `down` elimina lo que `up` creó (contenedores y red) pero no los ficheros del proyecto, y que los mismos comandos de supervisión del ejercicio 10 existen con el prefijo `docker compose`.
